@@ -1,0 +1,55 @@
+name: Scraping nocny – sklepy alkoholowe
+
+on:
+  # Pon–Pt o 3:00 czasu polskiego (2:00 UTC zimą / 1:00 UTC latem)
+  schedule:
+    - cron: "0 2 * * 1-5"
+
+  # Możliwość ręcznego uruchomienia z zakładki Actions
+  workflow_dispatch:
+
+jobs:
+  scrape-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180   # 3h max – dużo produktów
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zainstaluj zależności
+        run: pip install -r requirements.txt
+
+      # ── Każdy scraper osobno ──────────────────────────────────────
+      - name: "Scraper 1: alkoholeswiata24"
+        run: python scrapers/alkoholeswiata24.py
+        continue-on-error: true   # jeśli jeden padnie, reszta działa dalej
+
+      - name: "Scraper 2: domwhisky"
+        run: python scrapers/domwhisky.py
+        continue-on-error: true
+
+      - name: "Scraper 3: dobreflaszki"
+        run: python scrapers/dobreflaszki.py
+        continue-on-error: true
+
+      - name: "Scraper 4: forfiterexclusive"
+        run: python scrapers/forfiterexclusive.py
+        continue-on-error: true
+
+      - name: "Scraper 5: winodlakazdego"
+        run: python scrapers/winodlakazdego.py
+        continue-on-error: true
+
+      # ── Wyślij wszystkie CSV-y mailem ─────────────────────────────
+      - name: Wyślij wyniki mailem
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: python send_email.py
