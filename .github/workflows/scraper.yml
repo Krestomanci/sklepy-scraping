@@ -1,52 +1,127 @@
 name: Scraping nocny – sklepy alkoholowe
 
 on:
-  # Pon–Pt o 3:00 czasu polskiego (2:00 UTC zimą / 1:00 UTC latem)
   schedule:
-    - cron: "0 2 * * 1-5"
-
-  # Możliwość ręcznego uruchomienia z zakładki Actions
+    - cron: "0 2 * * 1-5"   # Pon–Pt o 3:00 czasu polskiego
   workflow_dispatch:
 
 jobs:
-  scrape-and-send:
+
+  # ── Każdy scraper jako osobny niezależny job ──────────────────────
+
+  scraper-alkoholeswiata24:
     runs-on: ubuntu-latest
-    timeout-minutes: 180   # 3h max – dużo produktów
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scrapers/alkoholeswiata24.py
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csv-alkoholeswiata24
+          path: "*.csv"
+          retention-days: 1
+
+  scraper-domwhisky:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240   # domwhisky ma dużo produktów – 4h
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scrapers/domwhisky.py
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csv-domwhisky
+          path: "*.csv"
+          retention-days: 1
+
+  scraper-dobreflaszki:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scrapers/dobreflaszki.py
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csv-dobreflaszki
+          path: "*.csv"
+          retention-days: 1
+
+  scraper-forfiterexclusive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scrapers/forfiterexclusive.py
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csv-forfiterexclusive
+          path: "*.csv"
+          retention-days: 1
+
+  scraper-winodlakazdego:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scrapers/winodlakazdego.py
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csv-winodlakazdego
+          path: "*.csv"
+          retention-days: 1
+
+  # ── Job wysyłający mail – czeka aż wszystkie skończą ─────────────
+
+  send-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - scraper-alkoholeswiata24
+      - scraper-domwhisky
+      - scraper-dobreflaszki
+      - scraper-forfiterexclusive
+      - scraper-winodlakazdego
+    if: always()   # wyślij mail nawet jeśli któryś scraper padł
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Zainstaluj zależności
-        run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt
 
-      # ── Każdy scraper osobno ──────────────────────────────────────
-      - name: "Scraper 1: alkoholeswiata24"
-        run: python scrapers/alkoholeswiata24.py
-        continue-on-error: true   # jeśli jeden padnie, reszta działa dalej
+      - name: Pobierz wszystkie CSV-y
+        uses: actions/download-artifact@v4
+        with:
+          pattern: csv-*
+          merge-multiple: true   # wszystkie do jednego folderu
 
-      - name: "Scraper 2: domwhisky"
-        run: python scrapers/domwhisky.py
-        continue-on-error: true
-
-      - name: "Scraper 3: dobreflaszki"
-        run: python scrapers/dobreflaszki.py
-        continue-on-error: true
-
-      - name: "Scraper 4: forfiterexclusive"
-        run: python scrapers/forfiterexclusive.py
-        continue-on-error: true
-
-      - name: "Scraper 5: winodlakazdego"
-        run: python scrapers/winodlakazdego.py
-        continue-on-error: true
-
-      # ── Wyślij wszystkie CSV-y mailem ─────────────────────────────
       - name: Wyślij wyniki mailem
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
