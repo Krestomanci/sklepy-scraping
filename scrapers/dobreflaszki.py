@@ -18,7 +18,7 @@ def pobierz_kod_produktu(url):
         "Accept-Language": "pl-PL,pl;q=0.9"
     }
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=20)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         # 1. Meta-tag sku
@@ -46,7 +46,7 @@ def pobierz_produkty_z_kategorii(base_url, max_pages):
             "Accept-Language": "pl-PL,pl;q=0.9"
         }
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(url, headers=headers, timeout=20)
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
             for prod in soup.select("div.product_view-extended"):
