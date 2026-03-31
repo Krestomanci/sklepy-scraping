@@ -69,7 +69,7 @@ def pobierz_produkty_z_kategorii(base_url, max_pages):
                 })
         except Exception as e:
             print(f"❌ Błąd przy ładowaniu {url}: {e}")
-        time.sleep(1)
+        time.sleep(2)
     return produkty
 
 def scrapuj_dobreflaszki(output_file="OUTPUT_DOBREFLASZKI.csv"):
