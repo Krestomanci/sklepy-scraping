@@ -2,16 +2,14 @@ name: Scraping nocny – sklepy alkoholowe
 
 on:
   schedule:
-    - cron: "0 2 * * 1-5"   # Pon–Pt o 3:00 czasu polskiego
+    - cron: "0 2 * * 1,3,5"   # Pon, Śr, Pt o 3:00 czasu polskiego
   workflow_dispatch:
 
 jobs:
 
-  # ── Każdy scraper jako osobny niezależny job ──────────────────────
-
   scraper-alkoholeswiata24:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,7 +18,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scrapers/alkoholeswiata24.py
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: csv-alkoholeswiata24
           path: "*.csv"
@@ -28,7 +27,7 @@ jobs:
 
   scraper-domwhisky:
     runs-on: ubuntu-latest
-    timeout-minutes: 240   # domwhisky ma dużo produktów – 4h
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,7 +36,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scrapers/domwhisky.py
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: csv-domwhisky
           path: "*.csv"
@@ -45,7 +45,7 @@ jobs:
 
   scraper-dobreflaszki:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,7 +54,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scrapers/dobreflaszki.py
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: csv-dobreflaszki
           path: "*.csv"
@@ -62,7 +63,7 @@ jobs:
 
   scraper-forfiterexclusive:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,7 +72,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scrapers/forfiterexclusive.py
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: csv-forfiterexclusive
           path: "*.csv"
@@ -79,7 +81,7 @@ jobs:
 
   scraper-winodlakazdego:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,7 +90,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scrapers/winodlakazdego.py
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: csv-winodlakazdego
           path: "*.csv"
@@ -105,13 +108,12 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python scrapers/darwina.py
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: csv-darwina
           path: "*.csv"
           retention-days: 1
-          
-  # ── Job wysyłający mail – czeka aż wszystkie skończą ─────────────
 
   send-email:
     runs-on: ubuntu-latest
@@ -122,24 +124,20 @@ jobs:
       - scraper-dobreflaszki
       - scraper-forfiterexclusive
       - scraper-winodlakazdego
-      - scraper-darwina  
-    if: always()   # wyślij mail nawet jeśli któryś scraper padł
+      - scraper-darwina
+    if: always()
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - run: pip install -r requirements.txt
-
       - name: Pobierz wszystkie CSV-y
         uses: actions/download-artifact@v4
         with:
           pattern: csv-*
-          merge-multiple: true   # wszystkie do jednego folderu
-
+          merge-multiple: true
       - name: Wyślij wyniki mailem
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
