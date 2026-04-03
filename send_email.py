@@ -1,5 +1,6 @@
 import os
 import glob
+import pandas as pd
 import smtplib
 from email.message import EmailMessage
 from datetime import date
@@ -7,6 +8,21 @@ from datetime import date
 GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 RECIPIENT = os.environ["RECIPIENT_EMAIL"]
+
+
+# Połącz dwie części dobreflaszki w jeden plik
+czesc1 = "OUTPUT_DOBREFLASZKI_czesc1.csv"
+czesc2 = "OUTPUT_DOBREFLASZKI_czesc2.csv"
+merged = "OUTPUT_DOBREFLASZKI.csv"
+if os.path.exists(czesc1) or os.path.exists(czesc2):
+    parts = [pd.read_csv(f, encoding="utf-8-sig") for f in [czesc1, czesc2] if os.path.exists(f)]
+    if parts:
+        pd.concat(parts, ignore_index=True).to_csv(merged, index=False, encoding="utf-8-sig")
+        print(f"✅ Połączono dobreflaszki → {merged}")
+    # Usuń pliki częściowe
+    for f in [czesc1, czesc2]:
+        if os.path.exists(f):
+            os.remove(f)
 
 csv_files = glob.glob("*.csv")  # zbiera wszystkie CSV-y z katalogu głównego
 
