@@ -43,7 +43,7 @@ jobs:
           path: "*.csv"
           retention-days: 1
 
-  scraper-dobreflaszki:
+  scraper-dobreflaszki-1:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -52,12 +52,30 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python scrapers/dobreflaszki.py
+      - run: python scrapers/dobreflaszki.py 1
         continue-on-error: true
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: csv-dobreflaszki
+          name: csv-dobreflaszki-1
+          path: "*.csv"
+          retention-days: 1
+
+  scraper-dobreflaszki-2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scrapers/dobreflaszki.py 2
+        continue-on-error: true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csv-dobreflaszki-2
           path: "*.csv"
           retention-days: 1
 
