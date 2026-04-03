@@ -139,7 +139,8 @@ jobs:
     needs:
       - scraper-alkoholeswiata24
       - scraper-domwhisky
-      - scraper-dobreflaszki
+      - scraper-dobreflaszki-1
+      - scraper-dobreflaszki-2
       - scraper-forfiterexclusive
       - scraper-winodlakazdego
       - scraper-darwina
