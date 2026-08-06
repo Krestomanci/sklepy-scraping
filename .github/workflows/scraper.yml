@@ -225,63 +225,6 @@ jobs:
           path: "*.csv"
           retention-days: 1
 
-  scraper-frisco:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: playwright install chromium && playwright install-deps chromium
-      - run: python scrapers/frisco.py
-        continue-on-error: true
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: csv-frisco
-          path: "*.csv"
-          retention-days: 1
-
-  scraper-auchan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: playwright install chromium && playwright install-deps chromium
-      - run: python scrapers/auchan.py
-        continue-on-error: true
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: csv-auchan
-          path: "*.csv"
-          retention-days: 1
-
-  scraper-mamyito:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: playwright install chromium && playwright install-deps chromium
-      - run: python scrapers/mamyito.py
-        continue-on-error: true
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: csv-mamyito
-          path: "*.csv"
-          retention-days: 1
-
   send-email:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -298,9 +241,6 @@ jobs:
       - scraper-aleeksalkohole
       - scraper-sklepzwhisky
       - scraper-pitnemiody
-      - scraper-frisco
-      - scraper-auchan
-      - scraper-mamyito
     if: always()
 
     steps:
