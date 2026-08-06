@@ -51,8 +51,8 @@ async def fetch_ean(context, url):
     page = await context.new_page()
     try:
         page.set_default_timeout(NAVIGATION_TIMEOUT)
-        await page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT)
-        await page.wait_for_timeout(1000)
+        await page.goto(url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT)
+        await page.wait_for_timeout(1500)
 
         try:
             text = await page.inner_text("body", timeout=5000)
@@ -140,10 +140,14 @@ async def crawl_category(context, page, cat_name, cat_url, cat_id):
         print(f"  {cat_name}: strona {page_idx} -> {url}")
 
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT)
-            await page.wait_for_timeout(2000)
+            await page.goto(url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT)
             if page_idx == 1:
                 await accept_cookies(page)
+            # Czekaj na produkty
+            try:
+                await page.locator(".products .product").first.wait_for(timeout=15000)
+            except Exception:
+                await page.wait_for_timeout(5000)
         except Exception as e:
             print(f"  ! Blad: {str(e)[:100]}")
             break

@@ -23,12 +23,27 @@ async def create_browser(playwright):
 
 
 async def create_context(browser):
-    return await browser.new_context(
+    context = await browser.new_context(
         viewport={"width": 1280, "height": 900},
         locale="pl-PL",
         timezone_id="Europe/Warsaw",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        extra_http_headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+        },
     )
+    # Ukryj webdriver
+    await context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    """)
+    return context
 
 
 async def accept_cookies(page):
@@ -141,15 +156,26 @@ async def main():
             print(f"  Strona {page_idx}: {url}")
 
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT)
-                await page.wait_for_timeout(2000)
+                await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT)
+                await page.wait_for_timeout(3000)
                 if page_idx == 1:
                     await accept_cookies(page)
+                    await page.wait_for_timeout(2000)
+                # Czekaj na produkty z retry
+                for attempt in range(3):
+                    try:
+                        await page.locator("article.product-miniature").first.wait_for(timeout=10000)
+                        break
+                    except Exception:
+                        print(f"    Retry {attempt+1}/3 — produkty nie zaladowane, odswiezam...")
+                        await page.reload(wait_until="load", timeout=NAVIGATION_TIMEOUT)
+                        await page.wait_for_timeout(5000)
             except Exception as e:
                 print(f"  ! Blad nawigacji: {str(e)[:100]}")
                 break
 
             records = await parse_listing(page, "Alkohole")
+            print(f"    Znaleziono {len(records)} produktow na stronie")
 
             # Fetch EAN per product
             for i, rec in enumerate(records):
