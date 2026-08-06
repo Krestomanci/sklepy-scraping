@@ -88,6 +88,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
+      - run: playwright install chromium && playwright install-deps chromium
       - run: python scrapers/forfiterexclusive.py
         continue-on-error: true
       - if: always()
@@ -178,6 +179,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
+      - run: playwright install chromium && playwright install-deps chromium
       - run: python scrapers/aleeksalkohole.py
         continue-on-error: true
       - if: always()
