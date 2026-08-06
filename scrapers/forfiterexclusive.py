@@ -1,152 +1,180 @@
+import asyncio
 import re
 import time
-import requests
+import csv
 import pandas as pd
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from playwright.async_api import async_playwright
 
 BASE = "https://www.forfiterexclusive.pl"
-
-# Scrapujemy /alkohole/ (wszystko) — 228 stron, ~2733 produktow
-# EAN pobierany z podstrony produktu (dl.data-sheet -> Identyfikator)
 KATEGORIA_URL = f"{BASE}/alkohole/"
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Accept-Language": "pl-PL,pl;q=0.9"
-}
-
-session = requests.Session()
-session.headers.update(HEADERS)
-
 OUTPUT_FILE = "OUTPUT_FORFITEREXCLUSIVE.csv"
 
-
-def _clean_txt(s):
-    return re.sub(r"\s+", " ", s or "").strip()
+NAVIGATION_TIMEOUT = 45000
 
 
-def _clean_price(text: str) -> str:
-    if not text:
-        return ""
-    text = text.replace("\xa0", " ").replace("\u00a0", " ")
-    m = re.search(r"([0-9]+[.,][0-9]{2})", text)
-    return m.group(1).replace(",", ".") if m else ""
+async def create_browser(playwright):
+    return await playwright.chromium.launch(
+        headless=True,
+        args=[
+            "--disable-dev-shm-usage", "--no-sandbox", "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+        ],
+    )
 
 
-def _fetch_ean(product_url: str) -> str:
+async def create_context(browser):
+    return await browser.new_context(
+        viewport={"width": 1280, "height": 900},
+        locale="pl-PL",
+        timezone_id="Europe/Warsaw",
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    )
+
+
+async def accept_cookies(page):
+    for text in ["Akceptuję", "Zgadzam się", "OK", "Rozumiem", "Zaakceptuj"]:
+        try:
+            await page.locator(f"button:has-text('{text}')").first.click(timeout=2000)
+            await page.wait_for_timeout(500)
+            return
+        except Exception:
+            pass
+
+
+async def fetch_ean(context, url):
+    page = await context.new_page()
     try:
-        r = session.get(product_url, timeout=15)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        # dl.data-sheet -> dt "Identyfikator" -> dd z EAN
-        ds = soup.select_one("dl.data-sheet")
-        if ds:
-            dts = ds.select("dt")
-            dds = ds.select("dd")
-            for dt, dd in zip(dts, dds):
-                if "identyfikator" in dt.get_text(strip=True).lower():
-                    ean = re.sub(r"\D", "", dd.get_text(strip=True))
+        page.set_default_timeout(NAVIGATION_TIMEOUT)
+        await page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT)
+        await page.wait_for_timeout(1000)
+
+        # dl.data-sheet -> dt "Identyfikator" -> dd
+        try:
+            dts = await page.locator("dl.data-sheet dt").all_inner_texts()
+            dds = await page.locator("dl.data-sheet dd").all_inner_texts()
+            for dt_text, dd_text in zip(dts, dds):
+                if "identyfikator" in dt_text.strip().lower():
+                    ean = re.sub(r"\D", "", dd_text.strip())
                     if 8 <= len(ean) <= 14:
                         return ean
-        # Fallback: regex on text
-        text = soup.get_text(" ", strip=True)
-        m = re.search(r'Identyfikator\s*[:\s]*(\d{8,14})', text)
-        if m:
-            return m.group(1)
+        except Exception:
+            pass
+
+        # Fallback: regex on page text
+        try:
+            text = await page.inner_text("body", timeout=3000)
+            m = re.search(r'Identyfikator\s*[:\s]*(\d{8,14})', text)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+
         return ""
     except Exception:
         return ""
+    finally:
+        await page.close()
 
 
-def parse_listing_page(html: str, page_url: str):
-    soup = BeautifulSoup(html, "html.parser")
+async def parse_listing(page, kategoria_nazwa):
     wyniki = []
+    for item in await page.locator("article.product-miniature").all():
+        try:
+            name_el = item.locator(".product-title a, h2 a, h3 a").first
+            nazwa = (await name_el.inner_text(timeout=3000)).strip()
+            link = await name_el.get_attribute("href") or ""
+            if link and not link.startswith("http"):
+                link = BASE + link
+        except Exception:
+            nazwa, link = "", ""
 
-    for item in soup.select("article.product-miniature"):
-        # Name
-        name_el = item.select_one(".product-title a, h2 a, h3 a")
-        nazwa = _clean_txt(name_el.get_text()) if name_el else ""
-        link = ""
-        if name_el and name_el.get("href"):
-            link = name_el["href"]
-            if not link.startswith("http"):
-                link = urljoin(page_url, link)
-
-        # Price
-        price_el = item.select_one(".product-price, span[content]")
-        if price_el and price_el.get("content"):
-            cena = price_el["content"]
-        elif price_el:
-            cena = _clean_price(price_el.get_text())
-        else:
+        try:
+            price_el = item.locator(".product-price, span[content]").first
+            content = await price_el.get_attribute("content")
+            if content:
+                cena = content
+            else:
+                cena_text = await price_el.inner_text(timeout=2000)
+                m = re.search(r"([0-9]+[.,][0-9]{2})", cena_text.replace("\xa0", " "))
+                cena = m.group(1).replace(",", ".") if m else ""
+        except Exception:
             cena = ""
-
-        # Old price (promo)
-        old_el = item.select_one(".regular-price")
-        cena_promo = ""
-        if old_el:
-            stara = _clean_price(old_el.get_text())
-            if stara:
-                cena_promo = cena
-                cena = stara
 
         wyniki.append({
             "Nazwa": nazwa or "Brak",
             "Cena": cena or "Brak",
-            "Link": link or page_url,
+            "Link": link,
+            "Kategoria": kategoria_nazwa,
         })
 
-    # Next page
-    next_url = None
-    next_el = soup.select_one("a[rel='next']")
-    if next_el and next_el.get("href"):
-        next_url = urljoin(page_url, next_el["href"])
-
-    return wyniki, next_url
+    return wyniki
 
 
-def scrapuj_forfiterexclusive():
-    open(OUTPUT_FILE, "w").close()
+async def get_next_page_url(page):
+    try:
+        next_el = page.locator("a[rel='next']").first
+        href = await next_el.get_attribute("href")
+        if href:
+            if not href.startswith("http"):
+                href = BASE + href
+            return href
+    except Exception:
+        pass
+    return None
+
+
+async def main():
     wszystkie = []
-    visited = set()
-    url = KATEGORIA_URL
     page_idx = 1
+    visited = set()
 
-    while url and url not in visited:
-        visited.add(url)
-        print(f"  Strona {page_idx}: {url}")
+    async with async_playwright() as p:
+        browser = await create_browser(p)
+        context = await create_context(browser)
 
-        try:
-            r = session.get(url, timeout=20)
-            r.raise_for_status()
-        except Exception as e:
-            print(f"  ! Blad: {e}")
-            break
+        page = await context.new_page()
+        page.set_default_timeout(NAVIGATION_TIMEOUT)
 
-        records, next_url = parse_listing_page(r.text, url)
+        url = KATEGORIA_URL
+        while url and url not in visited:
+            visited.add(url)
+            print(f"  Strona {page_idx}: {url}")
 
-        # Fetch EAN from each product page
-        for i, rec in enumerate(records):
-            if rec["Link"].startswith("http"):
-                ean = _fetch_ean(rec["Link"])
-                rec["EAN"] = ean or "Brak"
-                time.sleep(0.3)
-            else:
-                rec["EAN"] = "Brak"
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT)
+                await page.wait_for_timeout(2000)
+                if page_idx == 1:
+                    await accept_cookies(page)
+            except Exception as e:
+                print(f"  ! Blad nawigacji: {str(e)[:100]}")
+                break
 
-        wszystkie.extend(records)
-        print(f"    {len(records)} produktow (total: {len(wszystkie)})")
+            records = await parse_listing(page, "Alkohole")
 
-        # Autozapis co 100 produktow
-        if len(wszystkie) % 100 < len(records):
-            pd.DataFrame(wszystkie).to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+            # Fetch EAN per product
+            for i, rec in enumerate(records):
+                if rec["Link"]:
+                    ean = await fetch_ean(context, rec["Link"])
+                    rec["EAN"] = ean or "Brak"
+                    await asyncio.sleep(0.3)
+                else:
+                    rec["EAN"] = "Brak"
 
-        url = next_url
-        page_idx += 1
-        time.sleep(0.5)
+            wszystkie.extend(records)
+            print(f"    {len(records)} produktow (total: {len(wszystkie)})")
 
-    # Final save
+            # Autozapis co 100
+            if len(wszystkie) % 100 < len(records) and wszystkie:
+                pd.DataFrame(wszystkie).to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+
+            url = await get_next_page_url(page)
+            page_idx += 1
+            await asyncio.sleep(0.5)
+
+        await page.close()
+        await context.close()
+        await browser.close()
+
     if wszystkie:
         df = pd.DataFrame(wszystkie)
         df = df.drop_duplicates(subset=["Link"])
@@ -156,4 +184,4 @@ def scrapuj_forfiterexclusive():
 
 
 if __name__ == "__main__":
-    scrapuj_forfiterexclusive()
+    asyncio.run(main())
