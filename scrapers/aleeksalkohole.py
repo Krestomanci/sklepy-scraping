@@ -37,7 +37,17 @@ async def create_context(browser):
     )
 
 
-async def accept_cookies(page):
+async def dismiss_popups(page):
+    # Age gate — "Czy masz ukonczone 18 lat?" -> TAK
+    try:
+        age_btn = page.locator("#age-yes, button:has-text('TAK')")
+        if await age_btn.count() > 0:
+            await age_btn.first.click(timeout=3000)
+            await page.wait_for_timeout(1000)
+    except Exception:
+        pass
+
+    # Cookies
     for text in ["Akceptuję", "Zgadzam się", "OK", "Rozumiem", "Zaakceptuj"]:
         try:
             await page.locator(f"button:has-text('{text}')").first.click(timeout=2000)
@@ -51,8 +61,9 @@ async def fetch_ean(context, url):
     page = await context.new_page()
     try:
         page.set_default_timeout(NAVIGATION_TIMEOUT)
-        await page.goto(url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT)
+        await page.goto(url, wait_until="load", timeout=60000)
         await page.wait_for_timeout(1500)
+        await dismiss_popups(page)
 
         try:
             text = await page.inner_text("body", timeout=5000)
@@ -140,9 +151,9 @@ async def crawl_category(context, page, cat_name, cat_url, cat_id):
         print(f"  {cat_name}: strona {page_idx} -> {url}")
 
         try:
-            await page.goto(url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT)
-            if page_idx == 1:
-                await accept_cookies(page)
+            await page.goto(url, wait_until="load", timeout=60000)
+            await page.wait_for_timeout(2000)
+            await dismiss_popups(page)
             # Czekaj na produkty
             try:
                 await page.locator(".products .product").first.wait_for(timeout=15000)
